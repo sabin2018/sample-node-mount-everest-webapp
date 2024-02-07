@@ -49,7 +49,7 @@ jobs:
 
     steps:
       - name: Notify Slack
-        uses: rtCamp/action-slack-notify@v2
+        uses: slackapi/slack-github-action@v1.24.0
         with:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK }}
           channel: 'github'
