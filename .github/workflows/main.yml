@@ -51,7 +51,7 @@ jobs:
       - name: Notify Slack
         uses: rtCamp/action-slack-notify@v2
         with:
-          slack_webhook: ${{ secrets.SLACK }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK }}
           channel: 'github'
           username: 'GitHub Actions'
           icon_emoji: ':rocket:'
