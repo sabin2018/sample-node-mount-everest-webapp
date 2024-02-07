@@ -53,6 +53,10 @@ jobs:
         with:
           slack_webhook: ${{ secrets.SLACK }}
           channel: 'github'
+          payload: |
+             {
+             "text": "Git push done in the repo , and PRR is created"
+             }
           username: 'GitHub Actions'
           icon_emoji: ':rocket:'
           text: 'New pull request created: ${{ github.event.pull_request.html_url }}'
