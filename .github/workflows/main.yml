@@ -20,8 +20,8 @@ jobs:
         uses: aliyun/acr-login@v1
         with:
           login-server: https://registry-intl.ap-northeast-1.aliyuncs.com
-          username: "${{ secrets.REGISTRY_USERNAME }}"
-          password: "${{ secrets.REGISTRY_PASSWORD }}"
+          username: "${{ env.ACR_USERNAME }}"
+          password: "${{ env.ACR_PASSWORD }}"
       - name: Build and push image
         env:
           IMAGE_TAG: ${{ github.sha }}
