@@ -27,7 +27,7 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG .
-          docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr::$IMAGE_TAG
+          docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG
 
       - name: Install Alibaba Cloud CLI
         run: |
