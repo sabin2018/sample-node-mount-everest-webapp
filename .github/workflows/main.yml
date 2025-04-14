@@ -27,7 +27,7 @@ jobs:
         run: |
           echo "${{ secrets.ACR_PASSWORD }}" | docker login \
             --username=${{ secrets.ACR_USERNAME }} \
-            --password-stdin ${{ secrets.ACR_REGISTRY }}
+            --password-stdin ${{ env.ACR_REGISTRY }}
 
       - name: Build and Push Docker Image
         run: |
