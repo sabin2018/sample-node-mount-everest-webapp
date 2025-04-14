@@ -9,7 +9,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-        outputs:
+    outputs:
       # ビルドしたイメージのタグを後続のジョブに渡す
       IMAGE_TAG: ${{ steps.set-image-tag.outputs.IMAGE_TAG }}
     steps:
@@ -19,7 +19,6 @@ jobs:
       - name: Set Image Tag
         id: set-image-tag
         run: |
-          # GitのコミットIDと現在時刻を組み合わせてタグを作成
           IMAGE_TAG=$(git rev-parse --short HEAD)-$(date +%Y%m%d%H%M%S)
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV  # 環境変数として設定
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT  # 後続のジョブで使うための出力として設定
