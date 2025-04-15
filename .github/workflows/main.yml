@@ -66,7 +66,7 @@
 #             --ContainerGroupIds $eci_instance_id \
 #             --output cols=Status
 
-name: Deploy to Alibaba Cloud ECI (Create or Update)
+name: Deploy to Alibaba Cloud ECI (Create or Update by Name)
 
 on:
   push:
@@ -110,11 +110,13 @@ jobs:
         run: |
           aliyun configure set --profile default --access-key-id ${{ secrets.ALIBABA_ACCESS_KEY_ID }} --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} --region ${{ secrets.ALIBABA_REGION }}
 
-      - name: Check if ECI Container Group Exists
+      - name: Check if ECI Container Group Exists by Name
         id: check_eci
         run: |
-          if aliyun eci DescribeContainerGroup --RegionId ${{ secrets.ALIBABA_REGION }} --ContainerGroupId ${{ secrets.ECI_CONTAINER_GROUP_ID }} --output json > /dev/null 2>&1; then
+          eci_id=$(aliyun eci DescribeContainerGroups --RegionId ${{ secrets.ALIBABA_REGION }} --output json | jq -r ".ContainerGroups[] | select(.ContainerGroupName == \"${{ secrets.ECI_CONTAINER_NAME }}\") | .ContainerGroupId")
+          if [ -n "$eci_id" ]; then
             echo "::set-output name=exists::true"
+            echo "::set-output name=eci_id::$eci_id"
           else
             echo "::set-output name=exists::false"
           fi
@@ -124,7 +126,7 @@ jobs:
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          aliyun eci CreateContainerGroup \
+          eci_instance_id=$(aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${IMAGE_TAG} \
@@ -135,7 +137,8 @@ jobs:
             --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
             --Container.1.Port 80 \
             --RestartPolicy Always \
-            --output text cols=ContainerGroupId,RequestId
+            --output text | awk '{print $1}')
+          echo "ECI Instance ID: $eci_instance_id"
 
       - name: Update ECI Container Group (If Exists)
         if: steps.check_eci.outputs.exists == 'true'
@@ -144,15 +147,15 @@ jobs:
         run: |
           aliyun eci UpdateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId ${{ secrets.ECI_CONTAINER_GROUP_ID }} \
+            --ContainerGroupId ${{ steps.check_eci.outputs.eci_id }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${IMAGE_TAG} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
-            --output text cols=ContainerGroupId,RequestId
+            --output text
 
       - name: Check ECI Status
         run: |
           aliyun eci DescribeContainerGroupStatus \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupIds ${{ secrets.ECI_CONTAINER_GROUP_ID }} \
+            --ContainerGroupIds ${{ steps.check_eci.outputs.eci_id }} \
             --output cols=Status
           
