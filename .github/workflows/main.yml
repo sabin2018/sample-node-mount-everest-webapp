@@ -61,7 +61,7 @@ jobs:
 
       - name: Check ECI Status
         run: |
-          aliyun eci DescribeContainerGroup \
+          aliyun eci DescribeContainerGroupStatus \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupId $eci_instance_id \
             --output cols=Status
