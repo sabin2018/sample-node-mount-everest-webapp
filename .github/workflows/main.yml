@@ -47,7 +47,7 @@ jobs:
         run: |
           eci_instance_id=$(aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
+            --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${IMAGE_TAG} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Cpu ${{ secrets.ECI_CPU }} \
