@@ -58,11 +58,9 @@ jobs:
             --RestartPolicy Always \
             --output text cols=ContainerGroupId,RequestId)
           echo "ECI Instance ID: $eci_instance_id"
-      #       --Output json | jq -r '.ContainerGroupId')
-      #     echo "ECI Instance ID: $eci_instance_id"
-
-      # - name: Check ECI Status
-      #   run: |
-      #     aliyun eci DescribeContainerGroup \
-      #       --RegionId ${{ secrets.ALIBABA_REGION }} \
-      #       --ContainerGroupId $eci_instance_id
+          
+      - name: Check ECI Status
+        run: |
+          aliyun eci DescribeContainerGroup \
+            --RegionId ${{ secrets.ALIBABA_REGION }} \
+            --ContainerGroupId $eci_instance_id
