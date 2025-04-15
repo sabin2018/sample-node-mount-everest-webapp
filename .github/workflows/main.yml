@@ -47,7 +47,7 @@ jobs:
             --region ${{ secrets.ALIBABA_REGION }} \
             --vswitch-id ${{ secrets.ECI_VSWITCH_ID }} \
             --security-group-id ${{ secrets.ECI_SECURITY_GROUP_ID }} \
-            --container.1.image ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ secrets.ECI_IMAGE_NAME }}:latest \
+            --container.1.image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ env.IMAGE_TAG }} \
             --container.1.name ${{ secrets.ECI_CONTAINER_NAME }} \
             --cpu ${{ secrets.ECI_CPU }} \
             --memory ${{ secrets.ECI_MEMORY }} \
@@ -57,3 +57,20 @@ jobs:
       - name: Check ECI Status
         run: |
           aliyun eci describe-container-group --region ${{ secrets.ALIBABA_REGION }} --container-group-id $eci_instance_id
+
+      # - name: Deploy to ECI
+      #   run: |
+      #     eci_instance_id=$(aliyun eci create-container-group \
+      #       --region ${{ secrets.ALIBABA_REGION }} \
+      #       --vswitch-id ${{ secrets.ECI_VSWITCH_ID }} \
+      #       --security-group-id ${{ secrets.ECI_SECURITY_GROUP_ID }} \
+      #       --container.1.image ${{ secrets.ACR_REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ secrets.ECI_IMAGE_NAME }}:latest \
+      #       --container.1.name ${{ secrets.ECI_CONTAINER_NAME }} \
+      #       --cpu ${{ secrets.ECI_CPU }} \
+      #       --memory ${{ secrets.ECI_MEMORY }} \
+      #       --output json | jq -r '.ContainerGroupId')
+      #     echo "ECI Instance ID: $eci_instance_id"
+
+      # - name: Check ECI Status
+      #   run: |
+      #     aliyun eci describe-container-group --region ${{ secrets.ALIBABA_REGION }} --container-group-id $eci_instance_id
