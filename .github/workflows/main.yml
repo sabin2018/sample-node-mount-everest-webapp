@@ -48,15 +48,16 @@ jobs:
           eci_instance_id=$(aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
-            --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
-            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${IMAGE_TAG} \
+            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Cpu ${{ secrets.ECI_CPU }} \
             --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
+            --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
+            --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
+            --Container.1.Port 80 \
             --RestartPolicy Always \
-            --Cpu ${{ secrets.ECI_CPU }} \
-            --Memory ${{ secrets.ECI_MEMORY }}
+            --output text cols=ContainerGroupId,RequestId)
+          echo "ECI Instance ID: $eci_instance_id"
       #       --Output json | jq -r '.ContainerGroupId')
       #     echo "ECI Instance ID: $eci_instance_id"
 
