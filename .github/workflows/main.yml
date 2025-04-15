@@ -56,12 +56,12 @@ jobs:
             --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
             --RestartPolicy Always \
             --Cpu ${{ secrets.ECI_CPU }} \
-            --Memory ${{ secrets.ECI_MEMORY }} \
-            --Output json | jq -r '.ContainerGroupId')
-          echo "ECI Instance ID: $eci_instance_id"
+            --Memory ${{ secrets.ECI_MEMORY }}
+      #       --Output json | jq -r '.ContainerGroupId')
+      #     echo "ECI Instance ID: $eci_instance_id"
 
-      - name: Check ECI Status
-        run: |
-          aliyun eci DescribeContainerGroup \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId $eci_instance_id
+      # - name: Check ECI Status
+      #   run: |
+      #     aliyun eci DescribeContainerGroup \
+      #       --RegionId ${{ secrets.ALIBABA_REGION }} \
+      #       --ContainerGroupId $eci_instance_id
