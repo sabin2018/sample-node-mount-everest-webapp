@@ -41,9 +41,9 @@ jobs:
         run: |
           aliyun configure set --profile default --access-key-id ${{ secrets.ALIBABA_ACCESS_KEY_ID }} --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} --region ${{ secrets.ALIBABA_REGION }}
 
-      - name: Install and verify Alibaba Cloud CLI
-        run: |
-          curl -sL https://acs-install-cn-hangzhou.oss-cn-hangzhou.aliyuncs.com/aliyun-cli/install.sh | sh aliyun version
+      # - name: Install and verify Alibaba Cloud CLI
+      #   run: |
+      #     curl -sL https://acs-install-cn-hangzhou.oss-cn-hangzhou.aliyuncs.com/aliyun-cli/install.sh | sh aliyun version
 
       - name: Deploy to ECI
         run: |
