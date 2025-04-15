@@ -63,5 +63,5 @@ jobs:
         run: |
           aliyun eci DescribeContainerGroupStatus \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId $eci_instance_id \
+            --ContainerGroupIds $eci_instance_id \
             --output cols=Status
