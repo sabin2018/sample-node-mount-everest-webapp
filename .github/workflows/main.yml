@@ -137,7 +137,7 @@ jobs:
             --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
             --Container.1.Port 80 \
             --RestartPolicy Always \
-            --output text | awk '{print $1}')
+            --output text cols=ContainerGroupId,RequestId)
           echo "ECI Instance ID: $eci_instance_id"
 
       - name: Update ECI Container Group (If Exists)
@@ -150,7 +150,8 @@ jobs:
             --ContainerGroupId ${{ steps.check_eci.outputs.eci_id }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${IMAGE_TAG} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
-            --output text
+            --output text cols=ContainerGroupId,RequestId)
+          echo "ECI Instance ID: $eci_instance_id"
 
       - name: Check ECI Status
         run: |
