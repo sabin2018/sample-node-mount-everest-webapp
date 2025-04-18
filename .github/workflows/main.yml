@@ -67,7 +67,7 @@
 #             --output cols=Status
 # Workflow name
 # Workflow name
-name: Deploy to Alibaba Cloud ECI (Create or Update - Direct Secrets)
+name: Deploy to Alibaba Cloud ECI
 
 # Triggers: Run on push to 'ali' branch or manually
 on:
@@ -136,78 +136,47 @@ jobs:
             --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} \
             --region ${{ secrets.ALIBABA_REGION }}
 
-      # Step 7: Check if an ECI instance with the target name already exists (Non-JSON way)
-      - name: Check for Existing ECI Instance
+      # Step 7: Check Existing ECI Container
+      - name: Check Existing ECI Container
         id: check_eci
         run: |
-          echo "Checking for ECI instance named: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
-          # Use secrets directly in the aliyun command
-          # Request ContainerGroupId and Status columns explicitly.
-          # Capture stdout and stderr (2>&1) and continue on error (|| true).
-          # The output is expected to be a table like:
-          # ContainerGroupId                             Status
-          # aci-xxxxxxxxxxxxxxxxxxxx                 Running
-          # or just header/empty if not found, or an error message.
-          ECI_OUTPUT=$(aliyun eci DescribeContainerGroups \
+          # Check if container group exists and get its status
+          eci_info=$(aliyun eci DescribeContainerGroups \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --output cols=ContainerGroupId,Status \
-            --connect-timeout 5 --read-timeout 10 2>&1 || true)
+            --output json)
 
-          EXISTING_ECI_ID=""
-          EXISTING_ECI_STATUS=""
+          # Extract container group ID and status
+          container_group_id=$(echo "$eci_info" | jq -r '.ContainerGroups[0].ContainerGroupId // empty')
+          container_status=$(echo "$eci_info" | jq -r '.ContainerGroups[0].Status // empty')
 
-          # Check if the output contains the header row AND a line that looks like an ECI ID (starts with aci-)
-          # This is a non-JSON way to heuristic check if a result was returned.
-          if echo "$ECI_OUTPUT" | grep -q "ContainerGroupId" && echo "$ECI_OUTPUT" | grep -q "^aci-"; then
-            echo "Potential existing ECI found. Parsing output..."
-            # Extract the last line of the output which should contain the ID and Status
-            EXISTING_ECI_INFO_LINE=$(echo "$ECI_OUTPUT" | tail -n 1)
+          echo "Container Group ID: $container_group_id"
+          echo "Container Status: $container_status"
 
-            # Use awk to extract the first column (ID) and second column (Status)
-            # This relies on the exact column output format from --output cols.
-            EXISTING_ECI_ID=$(echo "$EXISTING_ECI_INFO_LINE" | awk '{print $1}')
-            EXISTING_ECI_STATUS=$(echo "$EXISTING_ECI_INFO_LINE" | awk '{print $2}')
+          # Set outputs for subsequent steps
+          echo "container_group_id=$container_group_id" >> $GITHUB_OUTPUT
+          echo "container_status=$container_status" >> $GITHUB_OUTPUT
 
-            # Basic validation: Check if the extracted ID looks like a valid ECI ID
-            if [[ "$EXISTING_ECI_ID" =~ ^aci- ]]; then
-                echo "Found existing ECI instance: ID=$EXISTING_ECI_ID, Status=$EXISTING_ECI_STATUS"
-                # Export ID and Status to GITHUB_ENV for subsequent steps
-                echo "EXISTING_ECI_ID=${EXISTING_ECI_ID}" >> $GITHUB_ENV
-                echo "EXISTING_ECI_STATUS=${EXISTING_ECI_STATUS}" >> $GITHUB_ENV
-            else
-                # Output contained the header but the last line didn't match the expected ID format
-                echo "Output contained header but no valid ECI ID pattern found in the data line. Assuming no existing instance."
-                echo "Full ECI_OUTPUT:"
-                echo "$ECI_OUTPUT" # Log the full output for debugging
-                echo "EXISTING_ECI_ID=" >> $GITHUB_ENV
-                echo "EXISTING_ECI_STATUS=" >> $GITHUB_ENV
-            fi
-          else
-            # Output did not contain the expected header or ID pattern - assuming no instance found or unexpected output
-            echo "No existing ECI instance found with name ${{ secrets.ECI_CONTAINER_GROUP_NAME }} or output format was unexpected."
-            echo "Full ECI_OUTPUT:"
-            echo "$ECI_OUTPUT" # Log the full output for debugging
-            echo "EXISTING_ECI_ID=" >> $GITHUB_ENV
-            echo "EXISTING_ECI_STATUS=" >> $GITHUB_ENV
-          fi
-
-    # Step 8: Create a new ECI instance IF it doesn't exist (Modified output handling)
-      - name: Create ECI Instance
-        # Conditional execution: Only run if the check step found NO existing ID
-        # Access EXISTING_ECI_ID via env, as it was set by the previous step
-        if: env.EXISTING_ECI_ID == ''
+      # Step 8: Update Existing Container
+      - name: Update Existing Container
+        if: steps.check_eci.outputs.container_group_id != '' && steps.check_eci.outputs.container_status == 'Running'
         run: |
-          # Use secret directly for container group name
-          echo "Creating new ECI instance: ${{ secrets.ECI_CONTAINER_GROUP_NAME }} with image ${{ env.FULL_IMAGE_NAME_WITH_TAG }}"
-          # Create the container group using secrets directly for configuration parameters
-          # Use env.FULL_IMAGE_NAME_WITH_TAG as it comes from the build step's GITHUB_ENV export
-          # Removed --output json to avoid the "bad flag format" error.
-          # Relying on default output format, hoping it's a JSON string containing ContainerGroupId.
-          create_output=$(aliyun eci CreateContainerGroup \
+          echo "Updating existing container with new image..."
+          aliyun eci UpdateContainerGroup \
+            --RegionId ${{ secrets.ALIBABA_REGION }} \
+            --ContainerGroupId ${{ steps.check_eci.outputs.container_group_id }} \
+            --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
+            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }}
+
+      # Step 9: Create New Container
+      - name: Create New Container
+        if: steps.check_eci.outputs.container_group_id == '' || steps.check_eci.outputs.container_status != 'Running'
+        run: |
+          echo "Creating new container..."
+          aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
+            --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Cpu ${{ secrets.ECI_CPU }} \
             --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
@@ -215,62 +184,7 @@ jobs:
             --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
-            --RestartPolicy Always \
-            || true) # Add || true to prevent immediate failure on aliyun error
-
-          # Parse the ContainerGroupId from the default output string using sed (non-jq)
-          # This looks for a line containing "ContainerGroupId": " and extracts the value in quotes.
-          # This assumes the default output is a string containing this pattern.
-          new_eci_instance_id=$(echo "$create_output" | sed -n 's/.*"ContainerGroupId": "\([^"]*\)".*/\1/p')
-
-          # Check if the extracted ID is empty, which indicates parsing failed or creation failed
-          if [[ -z "$new_eci_instance_id" ]]; then
-              echo "::error::Failed to create ECI instance or extract ID from output!"
-              echo "Full Output:"
-              echo "$create_output" # Log the raw output for debugging
-              exit 1
-          fi
-          echo "Successfully initiated ECI Instance creation. ID: $new_eci_instance_id"
-          # Note: The status is not available immediately from the create output.
-          # A subsequent step might be needed to poll for the status if required.
-
-      # Step 9: Update the existing ECI instance IF it exists AND is Running
-      # This step does not use jq to parse command output, so it remains largely the same.
-      - name: Update Existing ECI Instance
-        # Conditional execution: Access EXISTING_ECI_ID and EXISTING_ECI_STATUS via env
-        if: env.EXISTING_ECI_ID != '' && env.EXISTING_ECI_STATUS == 'Running'
-        run: |
-          # Access EXISTING_ECI_ID and FULL_IMAGE_NAME_WITH_TAG via env
-          echo "Updating existing ECI instance ID: ${{ env.EXISTING_ECI_ID }} with image ${{ env.FULL_IMAGE_NAME_WITH_TAG }}"
-          # Use secrets directly for RegionId and ContainerName
-          # Use env variables for ContainerGroupId and Image (set in previous steps)
-          update_output=$(aliyun eci UpdateContainerGroup \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId ${{ env.EXISTING_ECI_ID }} \
-            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
-            --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
-            --output cols=Status # Keep cols=Status here as we are not parsing its output with jq
-            ) # No || true here, allow failure if update command fails
-
-          if [[ $? -ne 0 ]]; then
-            echo "::error::Failed to update ECI instance ${{ env.EXISTING_ECI_ID }}"
-            echo "Output: $update_output"
-            exit 1
-          fi
-          echo "Successfully requested update for ECI instance ${{ env.EXISTING_ECI_ID }}"
-
-      # Step 10: Handle cases where the instance exists but is NOT Running (Optional)
-      # This step does not use jq, so it remains the same.
-      - name: Handle Non-Running Existing Instance
-        # Conditional execution: Access EXISTING_ECI_ID and EXISTING_ECI_STATUS via env
-        if: env.EXISTING_ECI_ID != '' && env.EXISTING_ECI_STATUS != 'Running'
-        run: |
-          echo "::warning::Existing ECI instance ${{ env.EXISTING_ECI_ID }} found, but status is '${{ env.EXISTING_ECI_STATUS }}' (not 'Running')."
-          echo "No update performed. Manual intervention might be required."
-          # Example delete command using secrets/env vars appropriately:
-          # echo "Deleting non-running instance ${{ env.EXISTING_ECI_ID }}"
-          # aliyun eci DeleteContainerGroup --RegionId ${{ secrets.ALIBABA_REGION }} --ContainerGroupId ${{ env.EXISTING_ECI_ID }} --Force true --output json
-          # if [[ $? -ne 0 ]]; then echo "::error::Failed to delete non-running instance."; exit 1; fi
+            --RestartPolicy Always
 
   
 
