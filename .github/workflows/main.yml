@@ -65,6 +65,7 @@
 #             --RegionId ${{ secrets.ALIBABA_REGION }} \
 #             --ContainerGroupIds $eci_instance_id \
 #             --output cols=Status
+
 # Workflow name
 # Workflow name
 name: Deploy to Alibaba Cloud ECI
@@ -123,9 +124,9 @@ jobs:
       # Step 5: Install Alibaba Cloud CLI and jq (JSON processor)
       - name: Install Alibaba Cloud CLI and jq
         run: |
-          sudo apt-get update && sudo apt-get install -y jq
           curl -L https://aliyuncli.alicdn.com/install.sh | bash
           echo "$HOME/.aliyuncli/bin" >> $GITHUB_PATH
+          sudo apt-get update && sudo apt-get install -y jq
 
       # Step 6: Configure the Alibaba Cloud CLI with credentials
       - name: Configure Alibaba Cloud CLI
