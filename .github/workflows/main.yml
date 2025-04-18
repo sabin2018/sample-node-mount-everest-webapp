@@ -87,7 +87,9 @@ jobs:
         if: env.ECI_STATUS == 'not_exist'
         run: |
           echo "Creating new ECI instance..."
-          eci_instance_id=$(aliyun eci CreateContainerGroup \
+          
+          # Create container group and capture the output
+          create_output=$(aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
@@ -99,15 +101,24 @@ jobs:
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
             --RestartPolicy Always \
-            --output text cols=ContainerGroupId,RequestId 2>&1)
+            --output json)
 
-          if echo "$eci_instance_id" | grep -q "error"; then
-            echo "::error::Failed to create ECI instance: $eci_instance_id"
+          # Check for errors
+          if echo "$create_output" | grep -q "error"; then
+            echo "::error::Failed to create ECI instance: $create_output"
             exit 1
           fi
 
-          echo "New ECI instance created with ID: $eci_instance_id"
-          echo "CONTAINER_GROUP_ID=$eci_instance_id" >> $GITHUB_ENV
+          # Extract container group ID from JSON output
+          CONTAINER_GROUP_ID=$(echo "$create_output" | jq -r '.ContainerGroupId')
+          
+          if [[ -z "$CONTAINER_GROUP_ID" ]]; then
+            echo "::error::Failed to extract container group ID from response"
+            exit 1
+          fi
+
+          echo "New ECI instance created with ID: $CONTAINER_GROUP_ID"
+          echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
 
       - name: Update Existing ECI Instance
         if: env.ECI_STATUS == 'Running'
