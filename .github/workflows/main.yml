@@ -116,7 +116,7 @@ jobs:
           fi
 
           # Extract container group ID from the output
-          CONTAINER_GROUP_ID=$(echo "$create_output" | awk 'NR==2 {print $1}')
+          CONTAINER_GROUP_ID=$(echo "$create_output" | tail -n 1 | tr -d ' ')
           
           if [[ -z "$CONTAINER_GROUP_ID" ]] || [[ "$CONTAINER_GROUP_ID" == "----------------" ]]; then
             echo "::error::Failed to extract container group ID from response"
@@ -138,7 +138,7 @@ jobs:
               --output text cols=Status)
             
             # Extract status from output
-            status=$(echo "$status_output" | awk 'NR==2 {print $1}')
+            status=$(echo "$status_output" | tail -n 1 | tr -d ' ')
             
             if [[ "$status" == "Running" ]]; then
               echo "Container is now running"
@@ -195,6 +195,6 @@ jobs:
             exit 1
           fi
 
-          status=$(echo "$status_output" | awk 'NR==2 {print $1}')
+          status=$(echo "$status_output" | tail -n 1 | tr -d ' ')
           echo "Final ECI status: $status"
     # end of job
