@@ -101,7 +101,59 @@ jobs:
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
             --RestartPolicy Always \
-            --output text cols=ContainerGroupId,RequestId)
+            --output json)
+
+          # Check for errors
+          if echo "$create_output" | grep -q "error"; then
+            echo "::error::Failed to create ECI instance: $create_output"
+            exit 1
+          fi
+
+          # Extract container group ID from JSON output
+          CONTAINER_GROUP_ID=$(echo "$create_output" | jq -r '.ContainerGroupId')
+          
+          if [[ -z "$CONTAINER_GROUP_ID" ]] || [[ "$CONTAINER_GROUP_ID" == "null" ]]; then
+            echo "::error::Failed to extract container group ID from response"
+            echo "Raw response: $create_output"
+            exit 1
+          fi
+
+          echo "New ECI instance created with ID: $CONTAINER_GROUP_ID"
+          echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
+
+          # Wait for the container to be running
+          echo "Waiting for container to be running..."
+          max_attempts=30
+          for i in $(seq 1 $max_attempts); do
+            # Get container status
+            status_output=$(aliyun eci DescribeContainerGroupStatus \
+              --RegionId ${{ secrets.ALIBABA_REGION }} \
+              --ContainerGroupIds $CONTAINER_GROUP_ID \
+              --output json)
+            
+            # Extract status from JSON
+            status=$(echo "$status_output" | jq -r '.ContainerGroupStatuses[0].Status // empty')
+            
+            if [[ "$status" == "Running" ]]; then
+              echo "Container is now running"
+              break
+            elif [[ "$status" == "Failed" ]]; then
+              echo "::error::Container failed to start"
+              exit 1
+            elif [[ -z "$status" ]]; then
+              echo "::error::Failed to get container status"
+              echo "Raw status output: $status_output"
+              exit 1
+            fi
+            
+            echo "Container status: $status (attempt $i/$max_attempts)"
+            sleep 50
+          done
+
+          if [[ "$status" != "Running" ]]; then
+            echo "::error::Container did not reach running state after $max_attempts attempts"
+            exit 1
+          fi
 
       - name: Update Existing ECI Instance
         if: env.ECI_STATUS == 'Running'
@@ -124,18 +176,19 @@ jobs:
           echo "ECI instance updated successfully"
 
       - name: Verify ECI Status
-        if: env.CONTAINER_GROUP_ID != '' && env.CONTAINER_GROUP_ID != '----------------'
+        if: env.CONTAINER_GROUP_ID != '' && env.CONTAINER_GROUP_ID != 'null'
         run: |
           echo "Checking final status of ECI instance..."
           status_output=$(aliyun eci DescribeContainerGroupStatus \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupIds ${{ env.CONTAINER_GROUP_ID }} \
-            --output text cols=Status 2>&1)
+            --output json)
 
           if echo "$status_output" | grep -q "error"; then
             echo "::error::Failed to check ECI status: $status_output"
             exit 1
           fi
 
-          echo "Final ECI status: $status_output"
-## end of file ##
+          status=$(echo "$status_output" | jq -r '.ContainerGroupStatuses[0].Status // empty')
+          echo "Final ECI status: $status"
+    # end of job
