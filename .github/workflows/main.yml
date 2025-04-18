@@ -55,27 +55,32 @@ jobs:
           # Install jq if not already installed
           sudo apt-get update && sudo apt-get install -y jq
 
-          # Check ECI status using the working command format
-          RESULT=$(aliyun eci DescribeContainerGroups \
+          # Get all container groups with the specified name
+          CONTAINER_GROUPS=$(aliyun eci DescribeContainerGroups \
             --RegionId ${{ secrets.ALIBABA_REGION }} | \
-            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .Status')
-
-          # Get container group ID if it exists
-          CONTAINER_GROUP_ID=$(aliyun eci DescribeContainerGroups \
-            --RegionId ${{ secrets.ALIBABA_REGION }} | \
-            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .ContainerGroupId')
+            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | [.ContainerGroupId, .Status] | @tsv')
 
           # Debug output
-          echo "ECI Status: $RESULT"
-          echo "Container Group ID: $CONTAINER_GROUP_ID"
+          echo "Found container groups:"
+          echo "$CONTAINER_GROUPS"
 
-          # Set environment variables based on the result
-          if [[ -z "$RESULT" ]]; then
-            echo "ECI_STATUS=not_exist" >> $GITHUB_ENV
-            echo "Container does not exist"
-          else
-            echo "ECI_STATUS=$RESULT" >> $GITHUB_ENV
+          # Get the first running container group
+          RUNNING_CONTAINER=$(echo "$CONTAINER_GROUPS" | grep "Running" | head -n 1)
+
+          if [[ -n "$RUNNING_CONTAINER" ]]; then
+            # Extract container group ID and status
+            CONTAINER_GROUP_ID=$(echo "$RUNNING_CONTAINER" | awk '{print $1}')
+            STATUS="Running"
+            
+            echo "Found running container:"
+            echo "Container Group ID: $CONTAINER_GROUP_ID"
+            echo "Status: $STATUS"
+            
+            echo "ECI_STATUS=$STATUS" >> $GITHUB_ENV
             echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
+          else
+            echo "No running container found"
+            echo "ECI_STATUS=not_exist" >> $GITHUB_ENV
           fi
 
       - name: Create New ECI Instance
