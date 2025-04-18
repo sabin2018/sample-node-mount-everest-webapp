@@ -55,29 +55,27 @@ jobs:
           # Install jq if not already installed
           sudo apt-get update && sudo apt-get install -y jq
 
-          # Fetch ECI details
-          eci_info=$(aliyun eci DescribeContainerGroups \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
-            --output json)
+          # Check ECI status using the working command format
+          RESULT=$(aliyun eci DescribeContainerGroups \
+            --RegionId ${{ secrets.ALIBABA_REGION }} | \
+            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .Status')
+
+          # Get container group ID if it exists
+          CONTAINER_GROUP_ID=$(aliyun eci DescribeContainerGroups \
+            --RegionId ${{ secrets.ALIBABA_REGION }} | \
+            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .ContainerGroupId')
 
           # Debug output
-          echo "Raw ECI info:"
-          echo "$eci_info"
+          echo "ECI Status: $RESULT"
+          echo "Container Group ID: $CONTAINER_GROUP_ID"
 
-          # Extract status and container group ID
-          RESULT=$(echo "$eci_info" | jq -r '.ContainerGroups[0].Status // empty')
-          CONTAINER_GROUP_ID=$(echo "$eci_info" | jq -r '.ContainerGroups[0].ContainerGroupId // empty')
-
-          # Check if we got a valid response
+          # Set environment variables based on the result
           if [[ -z "$RESULT" ]]; then
             echo "ECI_STATUS=not_exist" >> $GITHUB_ENV
             echo "Container does not exist"
           else
             echo "ECI_STATUS=$RESULT" >> $GITHUB_ENV
-            echo "Container status: $RESULT"
             echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
-            echo "Container Group ID: $CONTAINER_GROUP_ID"
           fi
 
       - name: Create New ECI Instance
