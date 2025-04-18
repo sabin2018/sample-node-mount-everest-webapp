@@ -137,7 +137,7 @@ jobs:
             fi
             
             echo "Container status: $status (attempt $i/30)"
-            sleep 10
+            sleep 50
           done
 
       - name: Update Existing ECI Instance
