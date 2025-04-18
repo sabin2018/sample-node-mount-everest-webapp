@@ -1,3 +1,141 @@
+# name: Deploy to Alibaba Cloud ECI
+
+# on:
+#   push:
+#     branches:
+#       - ali
+#   workflow_dispatch: # Allow manual triggering
+
+# jobs:
+#   build-and-deploy:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v3
+
+#       - name: Set up Docker Buildx
+#         uses: docker/setup-buildx-action@v3
+
+#       - name: Login to ACR
+#         uses: aliyun/acr-login@v1
+#         with:
+#           login-server: https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
+#           region-id: 'ap-northeast-1'
+#           access-key-id: ${{ secrets.ALIBABA_ACCESS_KEY_ID }}
+#           access-key-secret: ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }}
+#           username: "${{ secrets.ACR_USERNAME }}"
+#           password: "${{ secrets.ACR_PASSWORD }}"
+
+#       - name: Build and push image
+#         id: build_image
+#         env:
+#           IMAGE_TAG: ${{ github.sha }}
+#         run: |
+#           docker build -t registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG .
+#           docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG
+          
+#           # Store the full image name with tag for later use
+#           echo "FULL_IMAGE_NAME_WITH_TAG=registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG" >> $GITHUB_ENV
+
+#       - name: Install Alibaba Cloud CLI
+#         run: |
+#           curl -L https://aliyuncli.alicdn.com/install.sh | bash
+#           echo "$HOME/.aliyuncli/bin" >> $GITHUB_PATH
+
+#       - name: Configure Alibaba Cloud CLI
+#         run: |
+#           aliyun configure set --profile default \
+#             --access-key-id ${{ secrets.ALIBABA_ACCESS_KEY_ID }} \
+#             --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} \
+#             --region ${{ secrets.ALIBABA_REGION }}
+
+#       - name: Check ECI Container Status
+#         id: check_eci
+#         run: |
+#           # Fetch ECI details and filter by name
+#           RESULT=$(aliyun eci DescribeContainerGroups \
+#             --RegionId ${{ secrets.ALIBABA_REGION }} \
+#             --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
+#             --output json | jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .Status')
+
+#           # Check if the result is empty
+#           if [[ -z "$RESULT" ]]; then
+#             echo "ECI_STATUS=not_exist" >> $GITHUB_ENV
+#             echo "Container does not exist"
+#           else
+#             echo "ECI_STATUS=$RESULT" >> $GITHUB_ENV
+#             echo "Container status: $RESULT"
+            
+#             # Get container group ID if it exists
+#             CONTAINER_GROUP_ID=$(aliyun eci DescribeContainerGroups \
+#               --RegionId ${{ secrets.ALIBABA_REGION }} \
+#               --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
+#               --output json | jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .ContainerGroupId')
+            
+#             echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
+#           fi
+
+#       - name: Create New ECI Instance
+#         if: env.ECI_STATUS == 'not_exist'
+#         run: |
+#           echo "Creating new ECI instance..."
+#           eci_instance_id=$(aliyun eci CreateContainerGroup \
+#             --RegionId ${{ secrets.ALIBABA_REGION }} \
+#             --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
+#             --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
+#             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
+#             --Container.1.Cpu ${{ secrets.ECI_CPU }} \
+#             --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
+#             --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
+#             --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
+#             --Container.1.Port.1.Port 80 \
+#             --Container.1.Port.1.Protocol TCP \
+#             --RestartPolicy Always \
+#             --output text cols=ContainerGroupId,RequestId 2>&1)
+
+#           if echo "$eci_instance_id" | grep -q "error"; then
+#             echo "::error::Failed to create ECI instance: $eci_instance_id"
+#             exit 1
+#           fi
+
+#           echo "New ECI instance created with ID: $eci_instance_id"
+#           echo "CONTAINER_GROUP_ID=$eci_instance_id" >> $GITHUB_ENV
+
+#       - name: Update Existing ECI Instance
+#         if: env.ECI_STATUS == 'Running'
+#         run: |
+#           echo "Updating existing ECI instance..."
+#           echo "Container Group ID: ${{ env.CONTAINER_GROUP_ID }}"
+#           echo "New Image: ${{ env.FULL_IMAGE_NAME_WITH_TAG }}"
+
+#           update_output=$(aliyun eci UpdateContainerGroup \
+#             --RegionId ${{ secrets.ALIBABA_REGION }} \
+#             --ContainerGroupId ${{ env.CONTAINER_GROUP_ID }} \
+#             --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
+#             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} 2>&1)
+
+#           if echo "$update_output" | grep -q "error"; then
+#             echo "::error::Failed to update ECI instance: $update_output"
+#             exit 1
+#           fi
+
+#           echo "ECI instance updated successfully"
+
+#       - name: Verify ECI Status
+#         if: env.CONTAINER_GROUP_ID != ''
+#         run: |
+#           echo "Checking final status of ECI instance..."
+#           status_output=$(aliyun eci DescribeContainerGroupStatus \
+#             --RegionId ${{ secrets.ALIBABA_REGION }} \
+#             --ContainerGroupIds ${{ env.CONTAINER_GROUP_ID }} \
+#             --output cols=Status 2>&1)
+
+#           if echo "$status_output" | grep -q "error"; then
+#             echo "::error::Failed to check ECI status: $status_output"
+#             exit 1
+#           fi
+
+#           echo "Final ECI status: $status_output"
 name: Deploy to Alibaba Cloud ECI
 
 on:
@@ -19,70 +157,127 @@ jobs:
       - name: Login to ACR
         uses: aliyun/acr-login@v1
         with:
-          login-server: https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
-          region-id: 'ap-northeast-1'
+          # Use secrets/variables for server and region
+          login-server: ${{ secrets.ACR_REGISTRY }} # e.g. registry-intl.ap-northeast-1.aliyuncs.com
+          region-id: ${{ secrets.ALIBABA_REGION }}
           access-key-id: ${{ secrets.ALIBABA_ACCESS_KEY_ID }}
           access-key-secret: ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }}
+          # ACR_USERNAME is often your Access Key ID or empty if using AK/SK directly
+          # ACR_PASSWORD is often your Access Key Secret or empty if using AK/SK directly
           username: "${{ secrets.ACR_USERNAME }}"
           password: "${{ secrets.ACR_PASSWORD }}"
 
       - name: Build and push image
-        id: build_image
+        id: build_push # Add an ID for potential future use
         env:
           IMAGE_TAG: ${{ github.sha }}
+          # Extract parts of the registry URL from secrets if needed, or hardcode if stable
+          ACR_REGISTRY_URL: ${{ secrets.ACR_REGISTRY }} # e.g. registry-intl.ap-northeast-1.aliyuncs.com
+          ACR_REPO: ${{ secrets.ACR_REPO }} # e.g. demogc/demoacr
         run: |
-          docker build -t registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG .
-          docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG
-          
-          # Store the full image name with tag for later use
-          echo "FULL_IMAGE_NAME_WITH_TAG=registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG" >> $GITHUB_ENV
+          FULL_IMAGE_NAME_WITH_TAG="${ACR_REGISTRY_URL}/${ACR_REPO}:${IMAGE_TAG}"
+          echo "Building and pushing $FULL_IMAGE_NAME_WITH_TAG"
+          docker build -t $FULL_IMAGE_NAME_WITH_TAG .
+          docker push $FULL_IMAGE_NAME_WITH_TAG
+
+          # Export the full image name with tag for subsequent steps
+          echo "FULL_IMAGE_NAME_WITH_TAG=$FULL_IMAGE_NAME_WITH_TAG" >> $GITHUB_ENV
 
       - name: Install Alibaba Cloud CLI
         run: |
           curl -L https://aliyuncli.alicdn.com/install.sh | bash
+          # Add aliyun CLI to the PATH for current and subsequent steps
           echo "$HOME/.aliyuncli/bin" >> $GITHUB_PATH
+          # Ensure jq is available for the check step
+          sudo apt-get update && sudo apt-get install -y jq
 
       - name: Configure Alibaba Cloud CLI
+        # Authentication is handled by configuring the CLI with AK/SK
         run: |
           aliyun configure set --profile default \
             --access-key-id ${{ secrets.ALIBABA_ACCESS_KEY_ID }} \
             --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} \
             --region ${{ secrets.ALIBABA_REGION }}
 
-      - name: Check ECI Container Status
-        id: check_eci
-        run: |
-          # Fetch ECI details and filter by name
-          RESULT=$(aliyun eci DescribeContainerGroups \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
-            --output json | jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .Status')
+      # --- Start of New Conditional Deployment Logic ---
 
-          # Check if the result is empty
-          if [[ -z "$RESULT" ]]; then
-            echo "ECI_STATUS=not_exist" >> $GITHUB_ENV
-            echo "Container does not exist"
+      - name: Check for Existing ECI Instance Status and ID
+        id: check_eci # Give this step an ID to reference its outputs/env vars
+        run: |
+          REGION_ID="${{ secrets.ALIBABA_REGION }}"
+          CONTAINER_GROUP_NAME="${{ secrets.ECI_CONTAINER_GROUP_NAME }}" # Use the secret for the group name
+
+          echo "Checking for ECI instance named: $CONTAINER_GROUP_NAME in region $REGION_ID"
+
+          # Use aliyun CLI with default JSON output and pipe to jq
+          # Select the container group by name and output its ID and Status separated by space
+          # If not found, jq will output nothing, and the variable will be empty.
+          # Capture stdout and stderr (2>&1) and continue on error (|| true) for robustness
+          # Handle potential aliyun CLI errors before piping to jq
+          ECI_INFO_JSON=$(aliyun eci DescribeContainerGroups \
+            --RegionId "$REGION_ID" \
+            --connect-timeout 5 --read-timeout 10 \
+            2>&1 || echo "::error::Aliyun CLI command failed to describe groups before jq.")
+
+          # Check if aliyun command itself produced an error message we printed
+          if echo "$ECI_INFO_JSON" | grep -q "::error::Aliyun CLI command failed"; then
+              echo "$ECI_INFO_JSON" # Print the error message
+              exit 1 # Fail the step
+          fi
+
+          # Pipe the (potentially empty or error-containing) output to jq
+          # Use 'try ... catch null' to handle non-JSON output gracefully if needed,
+          # but standard JSON output is expected here.
+          # Select the matching group, output ID and Status. If not found, output is empty.
+          # Capture jq errors
+          ECI_JQ_OUTPUT=$(echo "$ECI_INFO_JSON" | jq -r '
+              .ContainerGroups[] |
+              select(.ContainerGroupName == "'"$CONTAINER_GROUP_NAME"'") |
+              (.ContainerGroupId // "null") + " " + (.Status // "Unknown")
+            ' 2>&1) # Output ID and Status separated by space, use // handles nulls gracefully
+
+          # Check if jq itself failed (e.g., invalid JSON format from aliyun)
+          if echo "$ECI_JQ_OUTPUT" | grep -q "parse error"; then
+              echo "::error::jq failed to parse aliyun output. This might indicate an unexpected API response format."
+              echo "Aliyun Output:"
+              echo "$ECI_INFO_JSON"
+              echo "jq Error:"
+              echo "$ECI_JQ_OUTPUT"
+              exit 1 # Fail the step if jq parsing failed
+          fi
+
+          # The successful output of jq will be either "ID STATUS" or empty.
+          # Check if jq returned any output (means instance with the name was found)
+          if [[ -n "$ECI_JQ_OUTPUT" ]]; then
+            # Output is "ID STATUS". Parse it.
+            read -r EXISTING_ECI_ID EXISTING_ECI_STATUS <<< "$ECI_JQ_OUTPUT"
+            echo "Found existing ECI instance: ID=$EXISTING_ECI_ID, Status=$EXISTING_ECI_STATUS"
+            # Export variables to GITHUB_ENV for subsequent steps
+            echo "EXISTING_ECI_ID=${EXISTING_ECI_ID}" >> $GITHUB_ENV
+            echo "EXISTING_ECI_STATUS=${EXISTING_ECI_STATUS}" >> $GITHUB_ENV
           else
-            echo "ECI_STATUS=$RESULT" >> $GITHUB_ENV
-            echo "Container status: $RESULT"
-            
-            # Get container group ID if it exists
-            CONTAINER_GROUP_ID=$(aliyun eci DescribeContainerGroups \
-              --RegionId ${{ secrets.ALIBABA_REGION }} \
-              --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
-              --output json | jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .ContainerGroupId')
-            
-            echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
+            # jq output was empty. Instance not found by name.
+            echo "No existing ECI instance found with name $CONTAINER_GROUP_NAME."
+            # Variables remain empty (or are explicitly set to empty strings).
+            echo "EXISTING_ECI_ID=" >> $GITHUB_ENV
+            echo "EXISTING_ECI_STATUS=" >> $GITHUB_ENV
           fi
 
       - name: Create New ECI Instance
-        if: env.ECI_STATUS == 'not_exist'
+        # Conditional execution: Only run if the check step found NO existing ID
+        # OR if an ID was found but the status is NOT Running.
+        # This fulfills the requirement: if not running (includes not exist), then create.
+        if: env.EXISTING_ECI_ID == '' || env.EXISTING_ECI_STATUS != 'Running'
         run: |
-          echo "Creating new ECI instance..."
-          eci_instance_id=$(aliyun eci CreateContainerGroup \
+          CONTAINER_GROUP_NAME="${{ secrets.ECI_CONTAINER_GROUP_NAME }}" # Use the secret for the group name
+          FULL_IMAGE_NAME_WITH_TAG="${{ env.FULL_IMAGE_NAME_WITH_TAG }}" # Use the exported env var
+
+          echo "Creating new ECI instance: $CONTAINER_GROUP_NAME with image $FULL_IMAGE_NAME_WITH_TAG"
+
+          aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
-            --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
+            --ContainerGroupName "$CONTAINER_GROUP_NAME" \
+            --Container.1.Image "$FULL_IMAGE_NAME_WITH_TAG" \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Cpu ${{ secrets.ECI_CPU }} \
             --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
@@ -91,48 +286,42 @@ jobs:
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
             --RestartPolicy Always \
-            --output text cols=ContainerGroupId,RequestId 2>&1)
+            # Optional: --output json if you wanted to parse the new ID immediately, but not strictly necessary here
 
-          if echo "$eci_instance_id" | grep -q "error"; then
-            echo "::error::Failed to create ECI instance: $eci_instance_id"
+          if [[ $? -ne 0 ]]; then
+            echo "::error::Failed to create ECI instance $CONTAINER_GROUP_NAME"
+            # Optionally print aliyun stderr if needed for debugging
             exit 1
           fi
-
-          echo "New ECI instance created with ID: $eci_instance_id"
-          echo "CONTAINER_GROUP_ID=$eci_instance_id" >> $GITHUB_ENV
+          echo "Successfully initiated ECI Instance creation for $CONTAINER_GROUP_NAME."
 
       - name: Update Existing ECI Instance
-        if: env.ECI_STATUS == 'Running'
+        # Conditional execution: Only run if the check step FOUND an ID AND the status IS Running.
+        if: env.EXISTING_ECI_ID != '' && env.EXISTING_ECI_STATUS == 'Running'
         run: |
-          echo "Updating existing ECI instance..."
-          echo "Container Group ID: ${{ env.CONTAINER_GROUP_ID }}"
-          echo "New Image: ${{ env.FULL_IMAGE_NAME_WITH_TAG }}"
+          EXISTING_ECI_ID="${{ env.EXISTING_ECI_ID }}" # Use the exported env var
+          FULL_IMAGE_NAME_WITH_TAG="${{ env.FULL_IMAGE_NAME_WITH_TAG }}" # Use the exported env var
+          CONTAINER_NAME="${{ secrets.ECI_CONTAINER_NAME }}" # Use the secret for the container name
 
-          update_output=$(aliyun eci UpdateContainerGroup \
+          echo "Updating existing ECI instance ID: $EXISTING_ECI_ID with image $FULL_IMAGE_NAME_WITH_TAG"
+
+          aliyun eci UpdateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId ${{ env.CONTAINER_GROUP_ID }} \
-            --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
-            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} 2>&1)
+            --ContainerGroupId "$EXISTING_ECI_ID" \
+            --Container.1.Name "$CONTAINER_NAME" \
+            --Container.1.Image "$FULL_IMAGE_NAME_WITH_TAG" \
+            # Optional: --output cols=Status if you want to see the update confirmation status, but check exit code is primary
 
-          if echo "$update_output" | grep -q "error"; then
-            echo "::error::Failed to update ECI instance: $update_output"
+          if [[ $? -ne 0 ]]; then
+            echo "::error::Failed to update ECI instance $EXISTING_ECI_ID"
+            # Optionally print aliyun stderr if needed for debugging
             exit 1
           fi
+          echo "Successfully requested update for ECI instance $EXISTING_ECI_ID."
 
-          echo "ECI instance updated successfully"
+      # --- End of New Conditional Deployment Logic ---
 
-      - name: Verify ECI Status
-        if: env.CONTAINER_GROUP_ID != ''
-        run: |
-          echo "Checking final status of ECI instance..."
-          status_output=$(aliyun eci DescribeContainerGroupStatus \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupIds ${{ env.CONTAINER_GROUP_ID }} \
-            --output cols=Status 2>&1)
-
-          if echo "$status_output" | grep -q "error"; then
-            echo "::error::Failed to check ECI status: $status_output"
-            exit 1
-          fi
-
-          echo "Final ECI status: $status_output"
+      # The original "Check ECI Status" step after creation is no longer needed here
+      # as the workflow now handles check/create/update conditionally.
+      # If you need to wait for the newly created instance to be Running,
+      # you'd add a separate wait step here, potentially using `DescribeContainerGroupStatus` in a loop.
