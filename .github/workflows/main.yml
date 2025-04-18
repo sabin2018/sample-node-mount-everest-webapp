@@ -120,6 +120,26 @@ jobs:
           echo "New ECI instance created with ID: $CONTAINER_GROUP_ID"
           echo "CONTAINER_GROUP_ID=$CONTAINER_GROUP_ID" >> $GITHUB_ENV
 
+          # Wait for the container to be running
+          echo "Waiting for container to be running..."
+          for i in {1..30}; do
+            status=$(aliyun eci DescribeContainerGroupStatus \
+              --RegionId ${{ secrets.ALIBABA_REGION }} \
+              --ContainerGroupIds $CONTAINER_GROUP_ID \
+              --output text cols=Status 2>&1)
+            
+            if echo "$status" | grep -q "Running"; then
+              echo "Container is now running"
+              break
+            elif echo "$status" | grep -q "Failed"; then
+              echo "::error::Container failed to start"
+              exit 1
+            fi
+            
+            echo "Container status: $status (attempt $i/30)"
+            sleep 10
+          done
+
       - name: Update Existing ECI Instance
         if: env.ECI_STATUS == 'Running'
         run: |
@@ -141,7 +161,7 @@ jobs:
           echo "ECI instance updated successfully"
 
       - name: Verify ECI Status
-        if: env.CONTAINER_GROUP_ID != ''
+        if: env.CONTAINER_GROUP_ID != '' && env.CONTAINER_GROUP_ID != '----------------'
         run: |
           echo "Checking final status of ECI instance..."
           status_output=$(aliyun eci DescribeContainerGroupStatus \
