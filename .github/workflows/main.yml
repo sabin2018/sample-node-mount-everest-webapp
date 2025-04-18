@@ -101,7 +101,7 @@ jobs:
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
             --RestartPolicy Always \
-            --output text cols=ContainerGroupId,RequestId)
+            --output text cols=ContainerGroupId)
 
           # Check for errors
           if echo "$create_output" | grep -q "error"; then
