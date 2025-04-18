@@ -97,7 +97,7 @@ jobs:
         uses: aliyun/acr-login@v1
         with:
           # Construct login server URL directly using secrets
-          login-server:  https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
+          login-server:  https://registry-intl.ap-northeast-1.aliyuncs.com
           region-id: 'ap-northeast-1'
           # Credentials from GitHub secrets
           access-key-id: ${{ secrets.ALIBABA_ACCESS_KEY_ID }}
