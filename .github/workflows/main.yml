@@ -137,7 +137,35 @@ jobs:
             --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} \
             --region ${{ secrets.ALIBABA_REGION }}
 
-      # Step 7: Check Existing ECI Container
+      # Step 7: Check Required Parameters
+      - name: Check Required Parameters
+        run: |
+          if [ -z "${{ secrets.ECI_CONTAINER_GROUP_NAME }}" ]; then
+            echo "::error::ECI_CONTAINER_GROUP_NAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.ECI_CONTAINER_NAME }}" ]; then
+            echo "::error::ECI_CONTAINER_NAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.ECI_CPU }}" ]; then
+            echo "::error::ECI_CPU secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.ECI_MEMORY }}" ]; then
+            echo "::error::ECI_MEMORY secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.ECI_VSWITCH_ID }}" ]; then
+            echo "::error::ECI_VSWITCH_ID secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.ECI_SECURITY_GROUP_ID }}" ]; then
+            echo "::error::ECI_SECURITY_GROUP_ID secret is not set"
+            exit 1
+          fi
+
+      # Step 8: Check Existing ECI Container
       - name: Check Existing ECI Container
         id: check_eci
         run: |
@@ -158,7 +186,7 @@ jobs:
           echo "container_group_id=$container_group_id" >> $GITHUB_OUTPUT
           echo "container_status=$container_status" >> $GITHUB_OUTPUT
 
-      # Step 8: Update Existing Container
+      # Step 9: Update Existing Container
       - name: Update Existing Container
         if: steps.check_eci.outputs.container_group_id != '' && steps.check_eci.outputs.container_status == 'Running'
         run: |
@@ -169,20 +197,26 @@ jobs:
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }}
 
-      # Step 9: Create New Container
+      # Step 10: Create New Container
       - name: Create New Container
         if: steps.check_eci.outputs.container_group_id == '' || steps.check_eci.outputs.container_status != 'Running'
         run: |
-          echo "Creating new container..."
+          echo "Creating new container with name: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
+          echo "Container name: ${{ secrets.ECI_CONTAINER_NAME }}"
+          echo "CPU: ${{ secrets.ECI_CPU }}"
+          echo "Memory: ${{ secrets.ECI_MEMORY }}"
+          echo "VSwitch ID: ${{ secrets.ECI_VSWITCH_ID }}"
+          echo "Security Group ID: ${{ secrets.ECI_SECURITY_GROUP_ID }}"
+          
           aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
+            --ContainerGroupName "${{ secrets.ECI_CONTAINER_GROUP_NAME }}" \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
-            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
-            --Container.1.Cpu ${{ secrets.ECI_CPU }} \
-            --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
-            --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
-            --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
+            --Container.1.Name "${{ secrets.ECI_CONTAINER_NAME }}" \
+            --Container.1.Cpu "${{ secrets.ECI_CPU }}" \
+            --Container.1.Memory "${{ secrets.ECI_MEMORY }}" \
+            --VSwitchId "${{ secrets.ECI_VSWITCH_ID }}" \
+            --SecurityGroupId "${{ secrets.ECI_SECURITY_GROUP_ID }}" \
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
             --RestartPolicy Always
