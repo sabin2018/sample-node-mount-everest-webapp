@@ -55,21 +55,19 @@ jobs:
           # Install jq if not already installed
           sudo apt-get update && sudo apt-get install -y jq
 
-          # Get container group ID
-          CONTAINER_GROUP_ID=$(aliyun eci DescribeContainerGroups \
+          # Get container group ID and status
+          CONTAINER_INFO=$(aliyun eci DescribeContainerGroups \
             --RegionId ${{ secrets.ALIBABA_REGION }} | \
-            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .ContainerGroupId')
+            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | {id: .ContainerGroupId, status: .Status}')
 
           # Debug output
-          echo "Container Group ID: $CONTAINER_GROUP_ID"
+          echo "Container Info: $CONTAINER_INFO"
 
-          if [[ -n "$CONTAINER_GROUP_ID" ]]; then
-            # Get container status
-            STATUS=$(aliyun eci DescribeContainerGroupStatus \
-              --RegionId ${{ secrets.ALIBABA_REGION }} \
-              --ContainerGroupIds $CONTAINER_GROUP_ID \
-              --output text cols=Status | awk 'NR==2 {print $1}')
-
+          if [[ -n "$CONTAINER_INFO" ]]; then
+            CONTAINER_GROUP_ID=$(echo "$CONTAINER_INFO" | jq -r '.id')
+            STATUS=$(echo "$CONTAINER_INFO" | jq -r '.status')
+            
+            echo "Container Group ID: $CONTAINER_GROUP_ID"
             echo "Container status: $STATUS"
             
             if [[ "$STATUS" == "Running" ]]; then
@@ -131,14 +129,10 @@ jobs:
           echo "Waiting for container to be running..."
           max_attempts=30
           for i in $(seq 1 $max_attempts); do
-            # Get container status
-            status_output=$(aliyun eci DescribeContainerGroupStatus \
-              --RegionId ${{ secrets.ALIBABA_REGION }} \
-              --ContainerGroupIds $CONTAINER_GROUP_ID \
-              --output text cols=Status)
-            
-            # Extract status from output
-            status=$(echo "$status_output" | tail -n 1 | tr -d ' ')
+            # Get container status using DescribeContainerGroups
+            status=$(aliyun eci DescribeContainerGroups \
+              --RegionId ${{ secrets.ALIBABA_REGION }} | \
+              jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .Status')
             
             if [[ "$status" == "Running" ]]; then
               echo "Container is now running"
@@ -148,12 +142,11 @@ jobs:
               exit 1
             elif [[ -z "$status" ]]; then
               echo "::error::Failed to get container status"
-              echo "Raw status output: $status_output"
               exit 1
             fi
             
             echo "Container status: $status (attempt $i/$max_attempts)"
-            sleep 50
+            sleep 10
           done
 
           if [[ "$status" != "Running" ]]; then
@@ -185,16 +178,14 @@ jobs:
         if: env.CONTAINER_GROUP_ID != '' && env.CONTAINER_GROUP_ID != '----------------'
         run: |
           echo "Checking final status of ECI instance..."
-          status_output=$(aliyun eci DescribeContainerGroupStatus \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupIds ${{ env.CONTAINER_GROUP_ID }} \
-            --output text cols=Status)
+          status=$(aliyun eci DescribeContainerGroups \
+            --RegionId ${{ secrets.ALIBABA_REGION }} | \
+            jq -r '.ContainerGroups[] | select(.ContainerGroupName == "'${{ secrets.ECI_CONTAINER_NAME }}'") | .Status')
 
-          if echo "$status_output" | grep -q "error"; then
-            echo "::error::Failed to check ECI status: $status_output"
+          if [[ -z "$status" ]]; then
+            echo "::error::Failed to check ECI status"
             exit 1
           fi
 
-          status=$(echo "$status_output" | tail -n 1 | tr -d ' ')
           echo "Final ECI status: $status"
     # end of job
