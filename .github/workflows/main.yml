@@ -80,6 +80,7 @@ jobs:
 
       - name: Update Existing Container
         if: steps.check_container.outputs.container_group_id != '' && steps.check_container.outputs.container_status == 'Running'
+        id: update_container
         run: |
           echo "Updating existing container with new image..."
           echo "Container Group ID: ${{ steps.check_container.outputs.container_group_id }}"
@@ -98,9 +99,12 @@ jobs:
           fi
           
           echo "Container updated successfully"
+          # Store the container ID for status check
+          echo "container_id=${{ steps.check_container.outputs.container_group_id }}" >> $GITHUB_OUTPUT
 
       - name: Create New Container
         if: steps.check_container.outputs.container_group_id == '' || steps.check_container.outputs.container_status != 'Running'
+        id: create_container
         run: |
           echo "Creating new container group..."
           echo "Container Group Name: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
@@ -134,18 +138,23 @@ jobs:
           # Extract container group ID
           container_group_id=$(echo "$create_output" | awk '{print $1}')
           echo "New container group created with ID: $container_group_id"
+          
+          # Store the container ID for status check
+          echo "container_id=$container_group_id" >> $GITHUB_OUTPUT
 
       - name: Verify Container Status
+        if: steps.update_container.outputs.container_id != '' || steps.create_container.outputs.container_id != ''
         run: |
-          # Get the container ID from either check or create step
-          if [ -n "${{ steps.check_container.outputs.container_group_id }}" ]; then
-            container_id="${{ steps.check_container.outputs.container_group_id }}"
+          # Get the container ID from either update or create step
+          if [ -n "${{ steps.update_container.outputs.container_id }}" ]; then
+            container_id="${{ steps.update_container.outputs.container_id }}"
           else
-            container_id=$(echo "$create_output" | awk '{print $1}')
+            container_id="${{ steps.create_container.outputs.container_id }}"
           fi
 
-          if [ -z "$container_id" ]; then
-            echo "::error::No container ID available for status check"
+          # Validate container ID format
+          if [[ ! "$container_id" =~ ^aci-[a-zA-Z0-9]+$ ]]; then
+            echo "::error::Invalid container ID format: $container_id"
             exit 1
           fi
 
