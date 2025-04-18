@@ -69,6 +69,7 @@ jobs:
 
       - name: Update Existing Container
         if: steps.check_container.outputs.container_group_id != '' && steps.check_container.outputs.container_status == 'Running'
+        id: update_container
         run: |
           echo "Updating existing container with new image..."
           echo "Container Group ID: ${{ steps.check_container.outputs.container_group_id }}"
@@ -79,8 +80,12 @@ jobs:
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }}
 
+          # Store the container ID for status check
+          echo "container_id=${{ steps.check_container.outputs.container_group_id }}" >> $GITHUB_OUTPUT
+
       - name: Create New Container
         if: steps.check_container.outputs.container_group_id == '' || steps.check_container.outputs.container_status != 'Running'
+        id: create_container
         run: |
           echo "Creating new container group..."
           echo "Container Name: ${{ secrets.ECI_CONTAINER_NAME }}"
@@ -104,16 +109,28 @@ jobs:
             --RestartPolicy Always \
             --output text cols=ContainerGroupId,RequestId)
 
-          echo "New ECI Instance ID: $eci_instance_id"
+          # Extract just the container ID from the output
+          new_container_id=$(echo "$eci_instance_id" | awk '{print $1}')
+          echo "New ECI Instance ID: $new_container_id"
+          
+          # Store the container ID for status check
+          echo "container_id=$new_container_id" >> $GITHUB_OUTPUT
 
       - name: Verify Container Status
+        if: steps.update_container.outputs.container_id != '' || steps.create_container.outputs.container_id != ''
         run: |
-          if [ -n "${{ steps.check_container.outputs.container_group_id }}" ]; then
-            container_id="${{ steps.check_container.outputs.container_group_id }}"
+          # Get the container ID from either update or create step
+          if [ -n "${{ steps.update_container.outputs.container_id }}" ]; then
+            container_id="${{ steps.update_container.outputs.container_id }}"
           else
-            container_id=$(echo "$eci_instance_id" | awk '{print $1}')
+            container_id="${{ steps.create_container.outputs.container_id }}"
           fi
-          
+
+          if [ -z "$container_id" ]; then
+            echo "::error::No container ID available for status check"
+            exit 1
+          fi
+
           echo "Checking status for container: $container_id"
           aliyun eci DescribeContainerGroupStatus \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
