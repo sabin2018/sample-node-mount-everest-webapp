@@ -188,4 +188,3 @@ jobs:
           fi
 
           echo "Final ECI status: $status"
-    # end of job
