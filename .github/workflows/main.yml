@@ -101,7 +101,7 @@ jobs:
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
             --RestartPolicy Always \
-            --output text cols=ContainerGroupId)
+            --output text cols=ContainerGroupId,RequestId)
 
           # Check for errors
           if echo "$create_output" | grep -q "error"; then
@@ -109,8 +109,8 @@ jobs:
             exit 1
           fi
 
-          # Extract container group ID from JSON output
-          CONTAINER_GROUP_ID=$(echo "$create_output" | jq -r '.ContainerGroupId')
+          # Extract container group ID from the output
+          CONTAINER_GROUP_ID=$(echo "$create_output" | awk 'NR==2 {print $1}')
           
           if [[ -z "$CONTAINER_GROUP_ID" ]]; then
             echo "::error::Failed to extract container group ID from response"
