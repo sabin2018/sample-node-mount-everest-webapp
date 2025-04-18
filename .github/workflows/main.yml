@@ -1,181 +1,62 @@
-# name: Deploy to Alibaba Cloud ECI
-
-# on:
-#   push:
-#     branches:
-#       - ali
-#   workflow_dispatch: # Allow manual triggering
-
-# jobs:
-#   build-and-deploy:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout code
-#         uses: actions/checkout@v3
-
-#       - name: Set up Docker Buildx
-#         uses: docker/setup-buildx-action@v3
-
-#       - name: Login to ACR
-#         uses: aliyun/acr-login@v1
-#         with:
-#           login-server: https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
-#           region-id: 'ap-northeast-1'
-#           access-key-id: ${{ secrets.ALIBABA_ACCESS_KEY_ID }}
-#           access-key-secret: ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }}
-#           username: "${{ secrets.ACR_USERNAME }}"
-#           password: "${{ secrets.ACR_PASSWORD }}"
-#       - name: Build and push image
-#         env:
-#           IMAGE_TAG: ${{ github.sha }}
-#         run: |
-#           docker build -t registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG .
-#           docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG
-
-#       - name: Install Alibaba Cloud CLI
-#         run: |
-#           curl -L https://aliyuncli.alicdn.com/install.sh | bash
-#           echo "$HOME/.aliyuncli/bin" >> $GITHUB_PATH
-
-#       - name: Configure Alibaba Cloud CLI
-#         run: |
-#           aliyun configure set --profile default --access-key-id ${{ secrets.ALIBABA_ACCESS_KEY_ID }} --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} --region ${{ secrets.ALIBABA_REGION }}
-
-#       - name: Deploy to ECI
-#         env:
-#           IMAGE_TAG: ${{ github.sha }}
-#         run: |
-#           eci_instance_id=$(aliyun eci CreateContainerGroup \
-#             --RegionId ${{ secrets.ALIBABA_REGION }} \
-#             --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
-#             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${IMAGE_TAG} \
-#             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
-#             --Container.1.Cpu ${{ secrets.ECI_CPU }} \
-#             --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
-#             --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
-#             --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
-#             --Container.1.Port 80 \
-#             --RestartPolicy Always \
-#             --output text cols=ContainerGroupId,RequestId)
-#           echo "ECI Instance ID: $eci_instance_id"
-
-#       - name: Check ECI Status
-#         run: |
-#           aliyun eci DescribeContainerGroupStatus \
-#             --RegionId ${{ secrets.ALIBABA_REGION }} \
-#             --ContainerGroupIds $eci_instance_id \
-#             --output cols=Status
-
-# Workflow name
-# Workflow name
 name: Deploy to Alibaba Cloud ECI
 
-# Triggers: Run on push to 'ali' branch or manually
 on:
   push:
     branches:
       - ali
   workflow_dispatch: # Allow manual triggering
 
-# NOTE: Top-level 'env:' block has been removed. Secrets are referenced directly.
-
 jobs:
   build-and-deploy:
-    # Runner environment
     runs-on: ubuntu-latest
-
     steps:
-      # Step 1: Check out the repository code
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
 
-      # Step 2: Set up Docker Buildx for building images
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # Step 3: Log in to Alibaba Cloud Container Registry (ACR)
       - name: Login to ACR
         uses: aliyun/acr-login@v1
         with:
-          # Construct login server URL directly using secrets
-          login-server:  https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
+          login-server: https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
           region-id: 'ap-northeast-1'
-          # Credentials from GitHub secrets
           access-key-id: ${{ secrets.ALIBABA_ACCESS_KEY_ID }}
           access-key-secret: ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }}
-          # Uncomment username/password if you use that auth method for ACR Enterprise
           username: "${{ secrets.ACR_USERNAME }}"
           password: "${{ secrets.ACR_PASSWORD }}"
-
-      # Step 4: Build the Docker image and push it to ACR
       - name: Build and push image
-        id: build_image
         env:
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG .
           docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG
 
-          # Store the tag and full image name with tag in GITHUB_ENV for use in later steps
-          # These are still accessed via 'env.' in subsequent steps
-          echo "IMAGE_TAG=${IMAGE_TAG}" >> $GITHUB_ENV
-          echo "FULL_IMAGE_NAME_WITH_TAG=${FULL_IMAGE_NAME_WITH_TAG}" >> $GITHUB_ENV
-
-      # Step 5: Install Alibaba Cloud CLI and jq (JSON processor)
-      - name: Install Alibaba Cloud CLI and jq
+      - name: Install Alibaba Cloud CLI
         run: |
           curl -L https://aliyuncli.alicdn.com/install.sh | bash
           echo "$HOME/.aliyuncli/bin" >> $GITHUB_PATH
-          sudo apt-get update && sudo apt-get install -y jq
 
-      # Step 6: Configure the Alibaba Cloud CLI with credentials
       - name: Configure Alibaba Cloud CLI
         run: |
-          # Use secrets directly for configuration
           aliyun configure set --profile default \
             --access-key-id ${{ secrets.ALIBABA_ACCESS_KEY_ID }} \
             --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} \
             --region ${{ secrets.ALIBABA_REGION }}
 
-      # Step 7: Check Required Parameters
-      - name: Check Required Parameters
+      - name: Check Existing Container Group
+        id: check_container
         run: |
-          if [ -z "${{ secrets.ECI_CONTAINER_GROUP_NAME }}" ]; then
-            echo "::error::ECI_CONTAINER_GROUP_NAME secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.ECI_CONTAINER_NAME }}" ]; then
-            echo "::error::ECI_CONTAINER_NAME secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.ECI_CPU }}" ]; then
-            echo "::error::ECI_CPU secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.ECI_MEMORY }}" ]; then
-            echo "::error::ECI_MEMORY secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.ECI_VSWITCH_ID }}" ]; then
-            echo "::error::ECI_VSWITCH_ID secret is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.ECI_SECURITY_GROUP_ID }}" ]; then
-            echo "::error::ECI_SECURITY_GROUP_ID secret is not set"
-            exit 1
-          fi
-
-      # Step 8: Check Existing ECI Container
-      - name: Check Existing ECI Container
-        id: check_eci
-        run: |
-          # Check if container group exists and get its status
+          # Check if container group exists with the specified name
+          echo "Checking for existing container group: ${{ secrets.ECI_CONTAINER_NAME }}"
+          
+          # First try to get container group by name
           eci_info=$(aliyun eci DescribeContainerGroups \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --output cols=ContainerGroupId,Status)
+            --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
+            --output cols=ContainerGroupId,Status || true)
 
-          # Parse the output to get container group ID and status
+          # Extract container group ID and status
           container_group_id=$(echo "$eci_info" | awk 'NR==2 {print $1}')
           container_status=$(echo "$eci_info" | awk 'NR==2 {print $2}')
 
@@ -186,40 +67,55 @@ jobs:
           echo "container_group_id=$container_group_id" >> $GITHUB_OUTPUT
           echo "container_status=$container_status" >> $GITHUB_OUTPUT
 
-      # Step 9: Update Existing Container
       - name: Update Existing Container
-        if: steps.check_eci.outputs.container_group_id != '' && steps.check_eci.outputs.container_status == 'Running'
+        if: steps.check_container.outputs.container_group_id != '' && steps.check_container.outputs.container_status == 'Running'
         run: |
           echo "Updating existing container with new image..."
+          echo "Container Group ID: ${{ steps.check_container.outputs.container_group_id }}"
+          
           aliyun eci UpdateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId ${{ steps.check_eci.outputs.container_group_id }} \
+            --ContainerGroupId ${{ steps.check_container.outputs.container_group_id }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
             --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }}
 
-      # Step 10: Create New Container
       - name: Create New Container
-        if: steps.check_eci.outputs.container_group_id == '' || steps.check_eci.outputs.container_status != 'Running'
+        if: steps.check_container.outputs.container_group_id == '' || steps.check_container.outputs.container_status != 'Running'
         run: |
-          echo "Creating new container with name: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
-          echo "Container name: ${{ secrets.ECI_CONTAINER_NAME }}"
+          echo "Creating new container group..."
+          echo "Container Name: ${{ secrets.ECI_CONTAINER_NAME }}"
           echo "CPU: ${{ secrets.ECI_CPU }}"
           echo "Memory: ${{ secrets.ECI_MEMORY }}"
           echo "VSwitch ID: ${{ secrets.ECI_VSWITCH_ID }}"
           echo "Security Group ID: ${{ secrets.ECI_SECURITY_GROUP_ID }}"
           
-          aliyun eci CreateContainerGroup \
+          # Create new container group
+          eci_instance_id=$(aliyun eci CreateContainerGroup \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName "${{ secrets.ECI_CONTAINER_GROUP_NAME }}" \
+            --ContainerGroupName ${{ secrets.ECI_CONTAINER_NAME }} \
             --Container.1.Image registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }} \
-            --Container.1.Name "${{ secrets.ECI_CONTAINER_NAME }}" \
-            --Container.1.Cpu "${{ secrets.ECI_CPU }}" \
-            --Container.1.Memory "${{ secrets.ECI_MEMORY }}" \
-            --VSwitchId "${{ secrets.ECI_VSWITCH_ID }}" \
-            --SecurityGroupId "${{ secrets.ECI_SECURITY_GROUP_ID }}" \
+            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
+            --Container.1.Cpu ${{ secrets.ECI_CPU }} \
+            --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
+            --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
+            --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
             --Container.1.Port.1.Port 80 \
             --Container.1.Port.1.Protocol TCP \
-            --RestartPolicy Always
+            --RestartPolicy Always \
+            --output text cols=ContainerGroupId,RequestId)
 
-  
-# test
+          echo "New ECI Instance ID: $eci_instance_id"
+
+      - name: Verify Container Status
+        run: |
+          if [ -n "${{ steps.check_container.outputs.container_group_id }}" ]; then
+            container_id="${{ steps.check_container.outputs.container_group_id }}"
+          else
+            container_id=$(echo "$eci_instance_id" | awk '{print $1}')
+          fi
+          
+          echo "Checking status for container: $container_id"
+          aliyun eci DescribeContainerGroupStatus \
+            --RegionId ${{ secrets.ALIBABA_REGION }} \
+            --ContainerGroupIds $container_id \
+            --output cols=Status
