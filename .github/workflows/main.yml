@@ -74,31 +74,6 @@ on:
     branches:
       - ali
   workflow_dispatch: # Allow manual triggering
-
-# Environment variables available to all jobs and steps
-env:
-  # Define Alibaba Cloud region (use secrets for sensitive info)
-  ALIBABA_REGION: ${{ secrets.ALIBABA_REGION }} # e.g., ap-northeast-1
-
-  # Construct ACR registry URL from region
-  ACR_REGISTRY_URL: registry-intl.${{ secrets.ALIBABA_REGION }}.aliyuncs.com
-
-  # Define ACR details (use secrets for sensitive info)
-  ACR_NAMESPACE: ${{ secrets.ACR_NAMESPACE }} # e.g., demogc
-  ACR_REGISTRY: ${{ secrets.ACR_REGISTRY }} # e.g., demoacr
-
-  # Define ECI details (use secrets for sensitive info)
-  # This name MUST be consistent for the check/update logic to work
-  ECI_CONTAINER_GROUP_NAME: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}
-  # Name of the specific container *inside* the ECI group to update/create
-  ECI_CONTAINER_NAME: ${{ secrets.ECI_CONTAINER_NAME }}
-  # Resource allocation for the container
-  ECI_CPU: ${{ secrets.ECI_CPU }} # e.g., 0.5
-  ECI_MEMORY: ${{ secrets.ECI_MEMORY }} # e.g., 1.0
-  # Networking details (use secrets)
-  ECI_VSWITCH_ID: ${{ secrets.ECI_VSWITCH_ID }}
-  ECI_SECURITY_GROUP_ID: ${{ secrets.ECI_SECURITY_GROUP_ID }}
-
 jobs:
   build-and-deploy:
     # Runner environment
@@ -117,15 +92,12 @@ jobs:
       - name: Login to ACR
         uses: aliyun/acr-login@v1
         with:
-          # Correct login server format (just the domain)
-          login-server: https://${{ env.ACR_REGISTRY_URL }}
-          region-id: ${{ env.ALIBABA_REGION }}
-          # Credentials from GitHub secrets
+          login-server: https://registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr
+          region-id: 'ap-northeast-1'
           access-key-id: ${{ secrets.ALIBABA_ACCESS_KEY_ID }}
           access-key-secret: ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }}
-          # Uncomment username/password if you use that auth method for ACR Enterprise
-          # username: "${{ secrets.ACR_USERNAME }}"
-          # password: "${{ secrets.ACR_PASSWORD }}"
+          username: "${{ secrets.ACR_USERNAME }}"
+          password: "${{ secrets.ACR_PASSWORD }}"
 
       # Step 4: Build the Docker image and push it to ACR
       - name: Build and push image
