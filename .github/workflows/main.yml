@@ -57,19 +57,29 @@ jobs:
           eci_info=$(aliyun eci DescribeContainerGroups \
             --RegionId ${{ secrets.ALIBABA_REGION }} \
             --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --output cols=ContainerGroupId,Status 2>&1 || true)
+            --output cols=ContainerGroupId,Status 2>&1)
 
-          # Check if the output contains the expected format
+          # Debug output
+          echo "Raw ECI info:"
+          echo "$eci_info"
+
+          # Check if we got a valid response
           if echo "$eci_info" | grep -q "ContainerGroupId"; then
             # Extract container group ID and status
             container_group_id=$(echo "$eci_info" | awk 'NR==2 {print $1}')
             container_status=$(echo "$eci_info" | awk 'NR==2 {print $2}')
             
-            echo "Found existing container group:"
-            echo "Container Group ID: $container_group_id"
-            echo "Container Status: $container_status"
+            if [ -n "$container_group_id" ] && [ -n "$container_status" ]; then
+              echo "Found existing container group:"
+              echo "Container Group ID: $container_group_id"
+              echo "Container Status: $container_status"
+            else
+              echo "No valid container group found in response"
+              container_group_id=""
+              container_status=""
+            fi
           else
-            echo "No existing container group found"
+            echo "No container group found with name: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
             container_group_id=""
             container_status=""
           fi
