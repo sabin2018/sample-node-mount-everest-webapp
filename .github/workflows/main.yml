@@ -4,11 +4,16 @@ on:
   push:
     branches:
       - ali
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch: # Manual trigger allowed
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
+    env:
+      IMAGE_TAG: ${{ github.sha }}
+      FULL_IMAGE_NAME_WITH_TAG: registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:${{ github.sha }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -25,19 +30,15 @@ jobs:
           access-key-secret: ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }}
           username: "${{ secrets.ACR_USERNAME }}"
           password: "${{ secrets.ACR_PASSWORD }}"
-      - name: Build and push image
-        id: build_image
-        env:
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG .
-          docker push registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG
-          
-          # Store the full image name with tag for later use
-          echo "FULL_IMAGE_NAME_WITH_TAG=registry-intl.ap-northeast-1.aliyuncs.com/demogc/demoacr:$IMAGE_TAG" >> $GITHUB_ENV
 
-      - name: Install Alibaba Cloud CLI
+      - name: Build and Push Docker Image
         run: |
+          docker build -t $FULL_IMAGE_NAME_WITH_TAG .
+          docker push $FULL_IMAGE_NAME_WITH_TAG
+
+      - name: Install Alibaba Cloud CLI and jq
+        run: |
+          sudo apt-get update && sudo apt-get install -y jq
           curl -L https://aliyuncli.alicdn.com/install.sh | bash
           echo "$HOME/.aliyuncli/bin" >> $GITHUB_PATH
 
@@ -48,135 +49,63 @@ jobs:
             --access-key-secret ${{ secrets.ALIBABA_ACCESS_KEY_SECRET }} \
             --region ${{ secrets.ALIBABA_REGION }}
 
-      - name: Check Existing Container Group
-        id: check_container
+      - name: Deploy to ECI (create or update)
+        env:
+          REGION_ID: ${{ secrets.ALIBABA_REGION }}
+          CONTAINER_GROUP_NAME: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}
+          CONTAINER_NAME: ${{ secrets.ECI_CONTAINER_NAME }}
+          IMAGE: ${{ env.FULL_IMAGE_NAME_WITH_TAG }}
+          VSWITCH_ID: ${{ secrets.ECI_VSWITCH_ID }}
+          SECURITY_GROUP_ID: ${{ secrets.ECI_SECURITY_GROUP_ID }}
+          CPU: ${{ secrets.ECI_CPU }}
+          MEMORY: ${{ secrets.ECI_MEMORY }}
         run: |
-          echo "Checking for existing container group: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
-          
-          # Query for container group with error handling
-          eci_info=$(aliyun eci DescribeContainerGroups \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --output cols=ContainerGroupId,Status 2>&1)
+          echo "🔍 Checking for existing container group..."
+          GROUP_INFO=$(aliyun eci DescribeContainerGroups \
+            --RegionId "$REGION_ID" \
+            --ContainerGroupName "$CONTAINER_GROUP_NAME" \
+            --output json)
 
-          # Debug output
-          echo "Raw ECI info:"
-          echo "$eci_info"
+          CONTAINER_GROUP_ID=$(echo "$GROUP_INFO" | jq -r '.ContainerGroups[0].ContainerGroupId // empty')
+          CURRENT_STATUS=$(echo "$GROUP_INFO" | jq -r '.ContainerGroups[0].Status // empty')
 
-          # Check if we got a valid response
-          if echo "$eci_info" | grep -q "ContainerGroupId"; then
-            # Extract container group ID and status
-            container_group_id=$(echo "$eci_info" | awk 'NR==2 {print $1}')
-            container_status=$(echo "$eci_info" | awk 'NR==2 {print $2}')
-            
-            if [ -n "$container_group_id" ] && [ -n "$container_status" ]; then
-              echo "Found existing container group:"
-              echo "Container Group ID: $container_group_id"
-              echo "Container Status: $container_status"
-            else
-              echo "No valid container group found in response"
-              container_group_id=""
-              container_status=""
+          if [ -n "$CONTAINER_GROUP_ID" ] && [ "$CURRENT_STATUS" = "Running" ]; then
+            echo "🟢 Container group found and running. Updating container image..."
+            UPDATE_RESULT=$(aliyun eci UpdateContainerGroup \
+              --RegionId "$REGION_ID" \
+              --ContainerGroupId "$CONTAINER_GROUP_ID" \
+              --Container.1.Name "$CONTAINER_NAME" \
+              --Container.1.Image "$IMAGE" \
+              --Container.1.Cpu "$CPU" \
+              --Container.1.Memory "$MEMORY" \
+              --RestartPolicy Always \
+              --output json)
+
+            if [ $? -ne 0 ]; then
+              echo "::error:: Failed to update existing ECI container group."
+              exit 1
             fi
+            echo "✅ ECI container group updated: $CONTAINER_GROUP_ID"
+
           else
-            echo "No container group found with name: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
-            container_group_id=""
-            container_status=""
+            echo "🔄 Container group not found or not running. Creating new container group..."
+            CREATE_RESULT=$(aliyun eci CreateContainerGroup \
+              --RegionId "$REGION_ID" \
+              --ContainerGroupName "$CONTAINER_GROUP_NAME" \
+              --Container.1.Name "$CONTAINER_NAME" \
+              --Container.1.Image "$IMAGE" \
+              --Container.1.Cpu "$CPU" \
+              --Container.1.Memory "$MEMORY" \
+              --VSwitchId "$VSWITCH_ID" \
+              --SecurityGroupId "$SECURITY_GROUP_ID" \
+              --Container.1.Port 80 \
+              --RestartPolicy Always \
+              --output json)
+
+            if [ $? -ne 0 ]; then
+              echo "::error:: Failed to create new ECI container group."
+              exit 1
+            fi
+            NEW_GROUP_ID=$(echo "$CREATE_RESULT" | jq -r '.ContainerGroupId')
+            echo "✅ Created new ECI container group: $NEW_GROUP_ID"
           fi
-
-          # Set outputs for subsequent steps
-          echo "container_group_id=$container_group_id" >> $GITHUB_OUTPUT
-          echo "container_status=$container_status" >> $GITHUB_OUTPUT
-
-      - name: Update Existing Container
-        if: steps.check_container.outputs.container_group_id != '' && steps.check_container.outputs.container_status == 'Running'
-        id: update_container
-        run: |
-          echo "Updating existing container with new image..."
-          echo "Container Group ID: ${{ steps.check_container.outputs.container_group_id }}"
-          echo "New Image: ${{ env.FULL_IMAGE_NAME_WITH_TAG }}"
-          
-          # Update the container group
-          update_output=$(aliyun eci UpdateContainerGroup \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupId ${{ steps.check_container.outputs.container_group_id }} \
-            --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
-            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} 2>&1 || true)
-
-          if echo "$update_output" | grep -q "error"; then
-            echo "::error::Failed to update container: $update_output"
-            exit 1
-          fi
-          
-          echo "Container updated successfully"
-          # Store the container ID for status check
-          echo "container_id=${{ steps.check_container.outputs.container_group_id }}" >> $GITHUB_OUTPUT
-
-      - name: Create New Container
-        if: steps.check_container.outputs.container_group_id == '' || steps.check_container.outputs.container_status != 'Running'
-        id: create_container
-        run: |
-          echo "Creating new container group..."
-          echo "Container Group Name: ${{ secrets.ECI_CONTAINER_GROUP_NAME }}"
-          echo "Container Name: ${{ secrets.ECI_CONTAINER_NAME }}"
-          echo "Image: ${{ env.FULL_IMAGE_NAME_WITH_TAG }}"
-          echo "CPU: ${{ secrets.ECI_CPU }}"
-          echo "Memory: ${{ secrets.ECI_MEMORY }}"
-          echo "VSwitch ID: ${{ secrets.ECI_VSWITCH_ID }}"
-          echo "Security Group ID: ${{ secrets.ECI_SECURITY_GROUP_ID }}"
-          
-          # Create new container group
-          create_output=$(aliyun eci CreateContainerGroup \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupName ${{ secrets.ECI_CONTAINER_GROUP_NAME }} \
-            --Container.1.Image ${{ env.FULL_IMAGE_NAME_WITH_TAG }} \
-            --Container.1.Name ${{ secrets.ECI_CONTAINER_NAME }} \
-            --Container.1.Cpu ${{ secrets.ECI_CPU }} \
-            --Container.1.Memory ${{ secrets.ECI_MEMORY }} \
-            --VSwitchId ${{ secrets.ECI_VSWITCH_ID }} \
-            --SecurityGroupId ${{ secrets.ECI_SECURITY_GROUP_ID }} \
-            --Container.1.Port.1.Port 80 \
-            --Container.1.Port.1.Protocol TCP \
-            --RestartPolicy Always \
-            --output text cols=ContainerGroupId,RequestId 2>&1 || true)
-
-          if echo "$create_output" | grep -q "error"; then
-            echo "::error::Failed to create container: $create_output"
-            exit 1
-          fi
-          
-          # Extract container group ID
-          container_group_id=$(echo "$create_output" | awk '{print $1}')
-          echo "New container group created with ID: $container_group_id"
-          
-          # Store the container ID for status check
-          echo "container_id=$container_group_id" >> $GITHUB_OUTPUT
-
-      - name: Verify Container Status
-        if: steps.update_container.outputs.container_id != '' || steps.create_container.outputs.container_id != ''
-        run: |
-          # Get the container ID from either update or create step
-          if [ -n "${{ steps.update_container.outputs.container_id }}" ]; then
-            container_id="${{ steps.update_container.outputs.container_id }}"
-          else
-            container_id="${{ steps.create_container.outputs.container_id }}"
-          fi
-
-          # Validate container ID format
-          if [[ ! "$container_id" =~ ^aci-[a-zA-Z0-9]+$ ]]; then
-            echo "::error::Invalid container ID format: $container_id"
-            exit 1
-          fi
-
-          echo "Checking status for container: $container_id"
-          status_output=$(aliyun eci DescribeContainerGroupStatus \
-            --RegionId ${{ secrets.ALIBABA_REGION }} \
-            --ContainerGroupIds $container_id \
-            --output cols=Status 2>&1 || true)
-
-          if echo "$status_output" | grep -q "error"; then
-            echo "::error::Failed to check container status: $status_output"
-            exit 1
-          fi
-
-          echo "Container status: $status_output"
