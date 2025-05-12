@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: acs-cube
+  name: acs-cube-svc
+  namespace: default
+spec:
+  ports:
+  - port: 80
+    protocol: TCP
+    targetPort: 80
+  selector:
+    app: acs-cube # You must specify the value of the matchLabels parameter in the YAML file used to create the Deployment. 
+  type: LoadBalancer

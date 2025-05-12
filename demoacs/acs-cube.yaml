@@ -1,0 +1,28 @@
+apiVersion: apps/v1 # for versions before 1.8.0 use apps/v1beta1
+kind: Deployment
+metadata:
+  name: acs-cube # The application name. 
+  labels:
+    app: acs-cube
+spec:
+  replicas: 2 # The number of replicated pods. 
+  selector:
+    matchLabels:
+      app: acs-cube  # The value must be the same as the selector of the Service that is used to expose the application. 
+  template:
+    metadata:
+      labels:
+        app: acs-cube
+    spec:
+      containers:
+      - name: acs-cube
+        image: registry.cn-hangzhou.aliyuncs.com/acr-toolkit/ack-cube:1.0 # Replace with the address of the image that you want to use in the <image_name:tags> format. 
+        ports:
+        - containerPort: 80 # The container port that you want to expose. 
+        resources:
+          limits: # Set resource limits. 
+            cpu: '1'
+            memory: 1Gi
+          requests: # Set resource requests. 
+            cpu: 500m
+            memory: 512Mi        
