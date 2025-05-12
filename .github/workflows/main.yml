@@ -58,7 +58,7 @@ jobs:
         run: |
           echo "📦 Applying deployment.yaml to Alibaba Cloud ACS Cluster..."
           kubectl apply -f demoacs/test.yaml
-          kubectl set image deployment/testdemopipeline1 acs-cube=registry-intl.ap-northeast-1.aliyuncs.com/demogc/demok8s:${{ github.sha }}
+          kubectl set image deployment/testpipeline acs-cube=registry-intl.ap-northeast-1.aliyuncs.com/demogc/demok8s:${{ github.sha }}
 
       - name: Check Deployment Status
         run: |
