@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: acs-cube
-        image: registry-intl.ap-northeast-1.aliyuncs.com/demogc/demok8s:$IMAGE_TAG # Replace with the address of the image that you want to use in the <image_name:tags> format.
+        image: registry-intl.ap-northeast-1.aliyuncs.com/demogc/demok8s:latest # Replace with the address of the image that you want to use in the <image_name:tags> format.
         ports:
         - containerPort: 80 # The container port that you want to expose.
         resources:
