@@ -1,7 +1,7 @@
 apiVersion: apps/v1 # for versions before 1.8.0 use apps/v1beta1
 kind: Deployment
 metadata:
-  name: testpipeline1 # The application name.
+  name: testdemopipeline # The application name.
   labels:
     app: test
 spec:
@@ -14,9 +14,12 @@ spec:
       labels:
         app: test
     spec:
+      imagePullSecrets:
+        - name: acr-secret # The name of the secret used to pull images from ACR.
       containers:
       - name: acs-cube
-        image: registry-intl.ap-northeast-1.aliyuncs.com/demogc/demok8s:latest # Replace with the address of the image that you want to use in the <image_name:tags> format.
+        image: registry-intl.ap-northeast-1.aliyuncs.com/demogc/demok8s:v1 # Replace with the address of the image that you want to use in the <image_name:tags> format.
+        imagePullPolicy: Always # Always pull the image.
         ports:
         - containerPort: 80 # The container port that you want to expose.
         resources:
