@@ -50,6 +50,7 @@ jobs:
             --region ${{ secrets.ALIBABA_REGION }}
       - name: Setup kubeconfig
         run: |
+          mkdir -p ~/.kube
           echo "${{ secrets.ACS_KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
       - name: Deploy to ACK
         run: |
