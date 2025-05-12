@@ -54,7 +54,7 @@ jobs:
       - name: Deploy to ACK
         run: |
           echo "📦 Applying deployment.yaml to Alibaba Cloud ACS Cluster..."
-          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f demoacs/test.yaml
 
       - name: Check Deployment Status
         run: |
